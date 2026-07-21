@@ -1,0 +1,16 @@
+# Quantum Grid Intelligence — Dependencies
+# Core scientific computing
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+networkx>=3.0
+
+# Goemans-Williamson SDP baseline
+cvxpy>=1.3.0
+
+# Quantinuum toolkit (QAOA circuit construction)
+pytket>=1.25.0
+pytket-quantinuum>=0.30.0
+
+# Utilities
+tqdm>=4.65.0

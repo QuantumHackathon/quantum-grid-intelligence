@@ -1,0 +1,146 @@
+{
+  "metadata": {
+    "name": "Costa Rica ICE Transmission Network (Simplified)",
+    "description": "8-node simplified representation of the Instituto Costarricense de Electricidad (ICE) high-voltage transmission network. Nodes represent major generation centers and substations. Edge weights represent isolation benefit based on line length (km) and fault exposure.",
+    "source": "Topology derived from ICE open data portal (datos-ice-se.opendata.arcgis.com) and public transmission maps. Weights are representative approximations.",
+    "voltage_level": "230kV / 138kV backbone",
+    "country": "Costa Rica",
+    "sdg_alignment": ["SDG 7: Affordable and Clean Energy", "SDG 9: Industry, Innovation and Infrastructure", "SDG 13: Climate Action"]
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "name": "Arenal",
+      "type": "hydroelectric",
+      "capacity_mw": 157,
+      "lat": 10.453,
+      "lon": -84.730,
+      "description": "Arenal hydroelectric complex — largest reservoir in Costa Rica"
+    },
+    {
+      "id": 1,
+      "name": "Miravalles",
+      "type": "geothermal",
+      "capacity_mw": 163,
+      "lat": 10.748,
+      "lon": -85.194,
+      "description": "Miravalles geothermal field — renewable baseload generation"
+    },
+    {
+      "id": 2,
+      "name": "Cañas",
+      "type": "substation",
+      "capacity_mw": 0,
+      "lat": 10.432,
+      "lon": -85.094,
+      "description": "Cañas substation — major transmission hub in Guanacaste"
+    },
+    {
+      "id": 3,
+      "name": "Garabito",
+      "type": "thermal",
+      "capacity_mw": 200,
+      "lat": 9.961,
+      "lon": -84.640,
+      "description": "Garabito thermal plant — peaking/backup capacity near Pacific coast"
+    },
+    {
+      "id": 4,
+      "name": "San José",
+      "type": "load_center",
+      "capacity_mw": 0,
+      "lat": 9.934,
+      "lon": -84.088,
+      "description": "San José metropolitan area — primary load center, ~40% national demand"
+    },
+    {
+      "id": 5,
+      "name": "Cachí",
+      "type": "hydroelectric",
+      "capacity_mw": 103,
+      "lat": 9.837,
+      "lon": -83.812,
+      "description": "Cachí/Reventazón hydroelectric complex — Cartago province"
+    },
+    {
+      "id": 6,
+      "name": "Moín",
+      "type": "substation",
+      "capacity_mw": 0,
+      "lat": 10.006,
+      "lon": -83.085,
+      "description": "Moín substation — Caribbean coast, port infrastructure load"
+    },
+    {
+      "id": 7,
+      "name": "Palmar",
+      "type": "substation",
+      "capacity_mw": 0,
+      "lat": 8.951,
+      "lon": -83.470,
+      "description": "Palmar Sur substation — Southern Pacific region, interconnection point"
+    }
+  ],
+  "edges": [
+    {
+      "source": 0, "target": 1,
+      "weight": 4.2,
+      "line_length_km": 65,
+      "description": "Arenal–Miravalles: connects two major renewable generation centers"
+    },
+    {
+      "source": 0, "target": 2,
+      "weight": 3.8,
+      "line_length_km": 42,
+      "description": "Arenal–Cañas: hydroelectric output to Guanacaste hub"
+    },
+    {
+      "source": 1, "target": 2,
+      "weight": 3.5,
+      "line_length_km": 38,
+      "description": "Miravalles–Cañas: geothermal output to Guanacaste hub"
+    },
+    {
+      "source": 2, "target": 3,
+      "weight": 5.1,
+      "line_length_km": 120,
+      "description": "Cañas–Garabito: long Pacific corridor, high fault exposure"
+    },
+    {
+      "source": 3, "target": 4,
+      "weight": 6.3,
+      "line_length_km": 80,
+      "description": "Garabito–San José: critical feed to main load center"
+    },
+    {
+      "source": 4, "target": 5,
+      "weight": 4.7,
+      "line_length_km": 35,
+      "description": "San José–Cachí: Central Valley to hydroelectric generation"
+    },
+    {
+      "source": 5, "target": 6,
+      "weight": 5.8,
+      "line_length_km": 95,
+      "description": "Cachí–Moín: cross-mountain Caribbean corridor, high vulnerability"
+    },
+    {
+      "source": 4, "target": 6,
+      "weight": 4.9,
+      "line_length_km": 110,
+      "description": "San José–Moín: alternative Caribbean route through Braulio Carrillo"
+    },
+    {
+      "source": 3, "target": 7,
+      "weight": 5.5,
+      "line_length_km": 150,
+      "description": "Garabito–Palmar: Southern Pacific backbone, longest line"
+    },
+    {
+      "source": 4, "target": 3,
+      "weight": 6.3,
+      "line_length_km": 80,
+      "description": "San José–Garabito: redundant critical path"
+    }
+  ]
+}
