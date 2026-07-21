@@ -2,6 +2,6 @@ Method,Cut Value,Approx Ratio,Std,Partition
 Brute Force (Optimal),35.60,1.000,—,"[0, 1, 1, 0, 1, 1, 0, 1]"
 Greedy,35.40,0.994,—,"[0, 1, 1, 0, 1, 0, 1, 1]"
 Goemans-Williamson (200 rounds),35.60,1.000,± 0.560,—
-QAOA p=1 (10 runs),29.88,0.839,± 0.000,see best_params
-QAOA p=2 (10 runs),28.16,0.791,± 3.093,see best_params
-QAOA p=3 (10 runs),30.06,0.845,± 3.443,see best_params
+QAOA p=1 (10 runs),27.95,0.785,± 0.000,see best_params
+QAOA p=2 (10 runs),28.66,0.805,± 2.161,see best_params
+QAOA p=3 (10 runs),28.20,0.792,± 0.943,see best_params

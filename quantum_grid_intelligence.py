@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.optimize import minimize
-from scipy.linalg import cholesky
+from scipy.linalg import cholesky, expm
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -418,7 +418,7 @@ def goemans_williamson_maxcut(G, num_rounds=GW_ROUNDS):
     cuts = np.array(cuts)
     best_idx = np.argmax(cuts)
 
-    return cuts[best_idx], assignments[best_idx], np.mean(cuts), np.std(cuts)
+    return cuts[best_idx], assignments[best_idx], np.mean(cuts), np.std(cuts), X_val
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -427,65 +427,64 @@ def goemans_williamson_maxcut(G, num_rounds=GW_ROUNDS):
 
 def qaoa_statevector(G, gamma_list, beta_list):
     """
-    Simulate QAOA circuit using exact statevector evolution.
-
-    |ψ(γ,β)⟩ = Π_{l=1}^{p} [ U(H_B, β_l) · U(H_C, γ_l) ] |+⟩^n
-
-    U(H_C, γ) = Π_{(i,j)∈E} exp(-i·γ·w_ij/2·(I - Z_i·Z_j))
-    U(H_B, β) = Π_i exp(-i·β·X_i)
-
-    Returns: statevector |ψ⟩ as numpy array
+    Simulate Warm-Started QAOA circuit using exact statevector evolution.
+    Uses continuous GW probabilities c_i for initial state and custom mixer.
     """
     n = G.number_of_nodes()
     N = 2 ** n
     p = len(gamma_list)
     assert len(beta_list) == p
 
-    # Initialize |+⟩^n
-    psi = np.ones(N, dtype=complex) / np.sqrt(N)
+    nodes_list = list(G.nodes())
+    # Get warm-start probabilities or default to 0.5 (standard QAOA)
+    c_i_list = [G.nodes[i].get("c_i", 0.5) for i in nodes_list]
+
+    # Initialize |ψ(c)⟩
+    psi = np.zeros(N, dtype=complex)
+    for k in range(N):
+        amp = 1.0
+        for i in range(n):
+            bit = (k >> (n - 1 - i)) & 1
+            amp *= np.sqrt(c_i_list[i]) if bit == 1 else np.sqrt(1 - c_i_list[i])
+        psi[k] = amp
+
+    # Pre-calculate mixer Hamiltonian for each node
+    U_B_list = []
+    for c_i in c_i_list:
+        H_B_i = np.array([
+            [2*c_i - 1, -2*np.sqrt(c_i*(1-c_i))],
+            [-2*np.sqrt(c_i*(1-c_i)), 1 - 2*c_i]
+        ], dtype=complex)
+        U_B_list.append(H_B_i)
 
     for layer in range(p):
         gamma = gamma_list[layer]
         beta = beta_list[layer]
 
         # ── Cost unitary: U(H_C, γ) ──
-        # For each edge (i,j): apply exp(-i·γ·w/2·(I - Z_i·Z_j))
-        # = exp(-i·γ·w/2) · exp(+i·γ·w/2·Z_i·Z_j)
-        # The global phase exp(-i·γ·w/2) cancels in expectation values.
-        # Phase applied to basis state |b⟩: exp(+i·γ·w/2·(-1)^{b_i⊕b_j})
-        # where b_i = bit i of basis state b.
-
         for u, v, data in G.edges(data=True):
             w = data["weight"]
             angle = gamma * w / 2.0
+            u_idx = nodes_list.index(u)
+            v_idx = nodes_list.index(v)
             for k in range(N):
-                # Extract bits u and v from basis state k
-                bit_u = (k >> (n - 1 - u)) & 1
-                bit_v = (k >> (n - 1 - v)) & 1
-                # Z_u Z_v eigenvalue: +1 if same, -1 if different
+                bit_u = (k >> (n - 1 - u_idx)) & 1
+                bit_v = (k >> (n - 1 - v_idx)) & 1
                 zz = 1 - 2 * (bit_u ^ bit_v)
                 psi[k] *= np.exp(1j * angle * zz)
 
         # ── Mixer unitary: U(H_B, β) ──
-        # exp(-i·β·X_i) on each qubit = Rx(2β) on each qubit
-        # Rx(θ) = [[cos(θ/2), -i·sin(θ/2)], [-i·sin(θ/2), cos(θ/2)]]
-
         for qubit in range(n):
-            cos_b = np.cos(beta)
-            sin_b = np.sin(beta)
+            U_B = expm(-1j * beta * U_B_list[qubit])
             psi_new = np.zeros_like(psi)
-
             for k in range(N):
                 bit = (k >> (n - 1 - qubit)) & 1
                 k_flip = k ^ (1 << (n - 1 - qubit))
-
+                
                 if bit == 0:
-                    psi_new[k] += cos_b * psi[k]
-                    psi_new[k] += -1j * sin_b * psi[k_flip]
+                    psi_new[k] += U_B[0, 0] * psi[k] + U_B[0, 1] * psi[k_flip]
                 else:
-                    psi_new[k] += -1j * sin_b * psi[k_flip]
-                    psi_new[k] += cos_b * psi[k]
-
+                    psi_new[k] += U_B[1, 1] * psi[k] + U_B[1, 0] * psi[k_flip]
             psi = psi_new
 
     return psi
@@ -940,11 +939,19 @@ def main():
     print(f"  ✓ Greedy Max-Cut = {greedy_cut:.2f} (r = {greedy_ratio:.3f})")
 
     print(f"  Running Goemans-Williamson ({GW_ROUNDS} hyperplane rounds)...")
-    gw_cut, gw_x, gw_mean, gw_std = goemans_williamson_maxcut(G)
+    gw_cut, gw_x, gw_mean, gw_std, X_val = goemans_williamson_maxcut(G)
     gw_ratio = gw_cut / optimal_cut
     gw_mean_ratio = gw_mean / optimal_cut
     print(f"  ✓ GW Best Max-Cut = {gw_cut:.2f} (r = {gw_ratio:.3f})")
     print(f"    GW Mean = {gw_mean:.2f} ± {gw_std:.2f} (r_mean = {gw_mean_ratio:.3f})")
+
+    # [NEW] WS-QAOA Warm Start Integration
+    print("    -> Warm-starting QAOA from Goemans-Williamson SDP solution...")
+    nodes_list = list(G.nodes())
+    for idx, i in enumerate(nodes_list):
+        c_val = (1 - X_val[0, idx]) / 2.0
+        c_val = np.clip(c_val, 0.05, 0.95)  # Epsilon = 0.05 for exploration
+        G.nodes[i]["c_i"] = c_val
 
     # ── Section 4 & 5: QAOA Optimization ──
     print("\n>>  Section 4-5: QAOA Optimization...")
