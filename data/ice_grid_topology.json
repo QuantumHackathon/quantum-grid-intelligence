@@ -1,15 +1,11 @@
 {
   "metadata": {
     "name": "Costa Rica ICE Transmission Network (Simplified)",
-    "description": "14-node representation of ICE transmission network.",
+    "description": "8-node simplified representation of the Instituto Costarricense de Electricidad (ICE) high-voltage transmission network. Nodes represent major generation centers and substations. Edge weights represent isolation benefit based on line length (km) and fault exposure.",
     "source": "Topology derived from ICE open data portal (datos-ice-se.opendata.arcgis.com) and public transmission maps. Weights are representative approximations.",
     "voltage_level": "230kV / 138kV backbone",
     "country": "Costa Rica",
-    "sdg_alignment": [
-      "SDG 7: Affordable and Clean Energy",
-      "SDG 9: Industry, Innovation and Infrastructure",
-      "SDG 13: Climate Action"
-    ]
+    "sdg_alignment": ["SDG 7: Affordable and Clean Energy", "SDG 9: Industry, Innovation and Infrastructure", "SDG 13: Climate Action"]
   },
   "nodes": [
     {
@@ -18,8 +14,8 @@
       "type": "hydroelectric",
       "capacity_mw": 157,
       "lat": 10.453,
-      "lon": -84.73,
-      "description": "Arenal hydroelectric complex \u2014 largest reservoir in Costa Rica"
+      "lon": -84.730,
+      "description": "Arenal hydroelectric complex — largest reservoir in Costa Rica"
     },
     {
       "id": 1,
@@ -28,16 +24,16 @@
       "capacity_mw": 163,
       "lat": 10.748,
       "lon": -85.194,
-      "description": "Miravalles geothermal field \u2014 renewable baseload generation"
+      "description": "Miravalles geothermal field — renewable baseload generation"
     },
     {
       "id": 2,
-      "name": "Ca\u00f1as",
+      "name": "Cañas",
       "type": "substation",
       "capacity_mw": 0,
       "lat": 10.432,
       "lon": -85.094,
-      "description": "Ca\u00f1as substation \u2014 major transmission hub in Guanacaste"
+      "description": "Cañas substation — major transmission hub in Guanacaste"
     },
     {
       "id": 3,
@@ -45,35 +41,35 @@
       "type": "thermal",
       "capacity_mw": 200,
       "lat": 9.961,
-      "lon": -84.64,
-      "description": "Garabito thermal plant \u2014 peaking/backup capacity near Pacific coast"
+      "lon": -84.640,
+      "description": "Garabito thermal plant — peaking/backup capacity near Pacific coast"
     },
     {
       "id": 4,
-      "name": "San Jos\u00e9",
+      "name": "San José",
       "type": "load_center",
       "capacity_mw": 0,
       "lat": 9.934,
       "lon": -84.088,
-      "description": "San Jos\u00e9 metropolitan area \u2014 primary load center, ~40% national demand"
+      "description": "San José metropolitan area — primary load center, ~40% national demand"
     },
     {
       "id": 5,
-      "name": "Cach\u00ed",
+      "name": "Cachí",
       "type": "hydroelectric",
       "capacity_mw": 103,
       "lat": 9.837,
       "lon": -83.812,
-      "description": "Cach\u00ed/Reventaz\u00f3n hydroelectric complex \u2014 Cartago province"
+      "description": "Cachí/Reventazón hydroelectric complex — Cartago province"
     },
     {
       "id": 6,
-      "name": "Mo\u00edn",
+      "name": "Moín",
       "type": "substation",
       "capacity_mw": 0,
       "lat": 10.006,
       "lon": -83.085,
-      "description": "Mo\u00edn substation \u2014 Caribbean coast, port infrastructure load"
+      "description": "Moín substation — Caribbean coast, port infrastructure load"
     },
     {
       "id": 7,
@@ -81,211 +77,70 @@
       "type": "substation",
       "capacity_mw": 0,
       "lat": 8.951,
-      "lon": -83.47,
-      "description": "Palmar Sur substation \u2014 Southern Pacific region, interconnection point"
-    },
-    {
-      "id": 8,
-      "name": "Reventaz\u00f3n",
-      "type": "hydroelectric",
-      "capacity_mw": 305,
-      "lat": 10.083,
-      "lon": -83.618,
-      "description": "Reventaz\u00f3n Dam - largest in Central America"
-    },
-    {
-      "id": 9,
-      "name": "Liberia",
-      "type": "substation",
-      "capacity_mw": 0,
-      "lat": 10.633,
-      "lon": -85.433,
-      "description": "Liberia substation - Northern Guanacaste hub"
-    },
-    {
-      "id": 10,
-      "name": "Puntarenas",
-      "type": "substation",
-      "capacity_mw": 0,
-      "lat": 9.983,
-      "lon": -84.833,
-      "description": "Puntarenas port area"
-    },
-    {
-      "id": 11,
-      "name": "San Carlos",
-      "type": "substation",
-      "capacity_mw": 0,
-      "lat": 10.333,
-      "lon": -84.433,
-      "description": "Northern zone connection"
-    },
-    {
-      "id": 12,
-      "name": "Turrialba",
-      "type": "substation",
-      "capacity_mw": 0,
-      "lat": 9.9,
-      "lon": -83.683,
-      "description": "Turrialba valley transmission"
-    },
-    {
-      "id": 13,
-      "name": "T\u00e1rcoles",
-      "type": "hydroelectric",
-      "capacity_mw": 50,
-      "lat": 9.8,
-      "lon": -84.55,
-      "description": "Tarcoles river generation"
+      "lon": -83.470,
+      "description": "Palmar Sur substation — Southern Pacific region, interconnection point"
     }
   ],
   "edges": [
     {
-      "source": 0,
-      "target": 1,
+      "source": 0, "target": 1,
       "weight": 4.2,
       "line_length_km": 65,
-      "description": "Arenal\u2013Miravalles: connects two major renewable generation centers"
+      "description": "Arenal–Miravalles: connects two major renewable generation centers"
     },
     {
-      "source": 0,
-      "target": 2,
+      "source": 0, "target": 2,
       "weight": 3.8,
       "line_length_km": 42,
-      "description": "Arenal\u2013Ca\u00f1as: hydroelectric output to Guanacaste hub"
+      "description": "Arenal–Cañas: hydroelectric output to Guanacaste hub"
     },
     {
-      "source": 1,
-      "target": 2,
+      "source": 1, "target": 2,
       "weight": 3.5,
       "line_length_km": 38,
-      "description": "Miravalles\u2013Ca\u00f1as: geothermal output to Guanacaste hub"
+      "description": "Miravalles–Cañas: geothermal output to Guanacaste hub"
     },
     {
-      "source": 2,
-      "target": 3,
+      "source": 2, "target": 3,
       "weight": 5.1,
       "line_length_km": 120,
-      "description": "Ca\u00f1as\u2013Garabito: long Pacific corridor, high fault exposure"
+      "description": "Cañas–Garabito: long Pacific corridor, high fault exposure"
     },
     {
-      "source": 3,
-      "target": 4,
+      "source": 3, "target": 4,
       "weight": 6.3,
       "line_length_km": 80,
-      "description": "Garabito\u2013San Jos\u00e9: critical feed to main load center"
+      "description": "Garabito–San José: critical feed to main load center"
     },
     {
-      "source": 4,
-      "target": 5,
+      "source": 4, "target": 5,
       "weight": 4.7,
       "line_length_km": 35,
-      "description": "San Jos\u00e9\u2013Cach\u00ed: Central Valley to hydroelectric generation"
+      "description": "San José–Cachí: Central Valley to hydroelectric generation"
     },
     {
-      "source": 5,
-      "target": 6,
+      "source": 5, "target": 6,
       "weight": 5.8,
       "line_length_km": 95,
-      "description": "Cach\u00ed\u2013Mo\u00edn: cross-mountain Caribbean corridor, high vulnerability"
+      "description": "Cachí–Moín: cross-mountain Caribbean corridor, high vulnerability"
     },
     {
-      "source": 4,
-      "target": 6,
+      "source": 4, "target": 6,
       "weight": 4.9,
       "line_length_km": 110,
-      "description": "San Jos\u00e9\u2013Mo\u00edn: alternative Caribbean route through Braulio Carrillo"
+      "description": "San José–Moín: alternative Caribbean route through Braulio Carrillo"
     },
     {
-      "source": 3,
-      "target": 7,
+      "source": 3, "target": 7,
       "weight": 5.5,
       "line_length_km": 150,
-      "description": "Garabito\u2013Palmar: Southern Pacific backbone, longest line"
+      "description": "Garabito–Palmar: Southern Pacific backbone, longest line"
     },
     {
-      "source": 4,
-      "target": 3,
+      "source": 4, "target": 3,
       "weight": 6.3,
       "line_length_km": 80,
-      "description": "San Jos\u00e9\u2013Garabito: redundant critical path"
-    },
-    {
-      "source": 5,
-      "target": 8,
-      "weight": 6.0,
-      "line_length_km": 40,
-      "description": "Cach\u00ed to Reventaz\u00f3n"
-    },
-    {
-      "source": 8,
-      "target": 6,
-      "weight": 5.2,
-      "line_length_km": 60,
-      "description": "Reventaz\u00f3n to Mo\u00edn"
-    },
-    {
-      "source": 2,
-      "target": 9,
-      "weight": 4.1,
-      "line_length_km": 50,
-      "description": "Ca\u00f1as to Liberia"
-    },
-    {
-      "source": 1,
-      "target": 9,
-      "weight": 3.2,
-      "line_length_km": 45,
-      "description": "Miravalles to Liberia"
-    },
-    {
-      "source": 3,
-      "target": 10,
-      "weight": 4.5,
-      "line_length_km": 25,
-      "description": "Garabito to Puntarenas"
-    },
-    {
-      "source": 0,
-      "target": 11,
-      "weight": 3.9,
-      "line_length_km": 60,
-      "description": "Arenal to San Carlos"
-    },
-    {
-      "source": 4,
-      "target": 11,
-      "weight": 5.0,
-      "line_length_km": 70,
-      "description": "San Jos\u00e9 to San Carlos"
-    },
-    {
-      "source": 4,
-      "target": 12,
-      "weight": 4.8,
-      "line_length_km": 45,
-      "description": "San Jos\u00e9 to Turrialba"
-    },
-    {
-      "source": 12,
-      "target": 8,
-      "weight": 4.2,
-      "line_length_km": 30,
-      "description": "Turrialba to Reventaz\u00f3n"
-    },
-    {
-      "source": 4,
-      "target": 13,
-      "weight": 5.5,
-      "line_length_km": 55,
-      "description": "San Jos\u00e9 to Tarcoles"
-    },
-    {
-      "source": 13,
-      "target": 3,
-      "weight": 4.7,
-      "line_length_km": 35,
-      "description": "Tarcoles to Garabito"
+      "description": "San José–Garabito: redundant critical path"
     }
   ]
 }
