@@ -457,14 +457,16 @@ def qaoa_statevector(G, gamma_list, beta_list):
         ], dtype=complex)
         U_B_list.append(H_B_i)
 
+    edges_list = list(G.edges(data=True))
     for layer in range(p):
-        gamma = gamma_list[layer]
-        beta = beta_list[layer]
+        gamma_layer = np.atleast_1d(gamma_list[layer])
+        beta_layer = np.atleast_1d(beta_list[layer])
 
         # ── Cost unitary: U(H_C, γ) ──
-        for u, v, data in G.edges(data=True):
+        for idx, (u, v, data) in enumerate(edges_list):
             w = data["weight"]
-            angle = gamma * w / 2.0
+            gamma_val = gamma_layer[idx] if len(gamma_layer) > 1 else gamma_layer[0]
+            angle = gamma_val * w / 2.0
             u_idx = nodes_list.index(u)
             v_idx = nodes_list.index(v)
             for k in range(N):
@@ -475,7 +477,8 @@ def qaoa_statevector(G, gamma_list, beta_list):
 
         # ── Mixer unitary: U(H_B, β) ──
         for qubit in range(n):
-            U_B = expm(-1j * beta * U_B_list[qubit])
+            beta_val = beta_layer[qubit] if len(beta_layer) > 1 else beta_layer[0]
+            U_B = expm(-1j * beta_val * U_B_list[qubit])
             psi_new = np.zeros_like(psi)
             for k in range(N):
                 bit = (k >> (n - 1 - qubit)) & 1
@@ -542,21 +545,24 @@ def build_qaoa_circuit_pytket(G, gamma_list, beta_list):
     for q in range(n):
         circ.H(q)
 
+    edges_list = list(G.edges(data=True))
     for layer in range(p):
-        gamma = gamma_list[layer]
-        beta = beta_list[layer]
+        gamma_layer = np.atleast_1d(gamma_list[layer])
+        beta_layer = np.atleast_1d(beta_list[layer])
 
         # Cost unitary: ZZ interactions for each edge
-        for u, v, data in G.edges(data=True):
+        for idx, (u, v, data) in enumerate(edges_list):
             w = data["weight"]
-            angle = gamma * w  # ZZPhase convention: exp(-i·angle/2·Z⊗Z)
+            gamma_val = gamma_layer[idx] if len(gamma_layer) > 1 else gamma_layer[0]
+            angle = gamma_val * w
             circ.CX(u, v)
             circ.Rz(angle, v)
             circ.CX(u, v)
 
         # Mixer unitary: Rx on each qubit
         for q in range(n):
-            circ.Rx(2 * beta, q)
+            beta_val = beta_layer[q] if len(beta_layer) > 1 else beta_layer[0]
+            circ.Rx(2 * beta_val, q)
 
     # Measurement
     circ.measure_all()
@@ -569,94 +575,49 @@ def build_qaoa_circuit_pytket(G, gamma_list, beta_list):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def optimize_qaoa(G, p, num_runs=NUM_QAOA_RUNS, verbose=True, prev_best_params=None):
-    """
-    Optimize QAOA parameters for a given depth p.
-
-    Strategy:
-      - p=1: exhaustive grid search → L-BFGS-B refinement
-      - p>1: warmstart from previous p's optimal parameters (interleave/extend)
-             plus random perturbations for diversity
-
-    Returns: dict with best/mean/std cut values, best parameters, all results.
-    """
+    n = G.number_of_nodes()
+    m = G.number_of_edges()
+    
     def neg_expectation(params):
-        """Negative expectation (for minimization)."""
-        gamma_list = params[:p]
-        beta_list = params[p:]
+        # params: [gamma_1_1, ..., gamma_p_m, beta_1_1, ..., beta_p_n]
+        gamma_flat = params[:p*m]
+        beta_flat = params[p*m:]
+        gamma_list = gamma_flat.reshape((p, m))
+        beta_list = beta_flat.reshape((p, n))
         return -qaoa_expectation(G, gamma_list, beta_list)
 
-    def warmstart_from_previous(prev_params, target_p):
-        """Extend p-1 optimal params to p by inserting/repeating layers."""
-        prev_p = len(prev_params) // 2
-        prev_gamma = prev_params[:prev_p]
-        prev_beta = prev_params[prev_p:]
-
-        if target_p == prev_p + 1:
-            # Insert a new layer: duplicate the last layer's params
-            new_gamma = np.append(prev_gamma, prev_gamma[-1])
-            new_beta = np.append(prev_beta, prev_beta[-1])
-        else:
-            # Linearly interpolate to fill target_p layers
-            old_idx = np.linspace(0, 1, prev_p)
-            new_idx = np.linspace(0, 1, target_p)
-            new_gamma = np.interp(new_idx, old_idx, prev_gamma)
-            new_beta = np.interp(new_idx, old_idx, prev_beta)
-
-        return np.concatenate([new_gamma, new_beta])
-
     results = []
-
+    
     for run_idx in range(num_runs):
-        # ── Initialization strategy ──
-        if p == 1:
-            # Exhaustive grid search for p=1
-            gamma_grid = np.linspace(0.1, np.pi, GRID_SEARCH_RES)
-            beta_grid = np.linspace(0.1, np.pi / 2, GRID_SEARCH_RES)
-            best_grid_val = float("inf")
-            best_grid_params = None
-
-            for g in gamma_grid:
-                for b in beta_grid:
-                    val = neg_expectation(np.array([g, b]))
-                    if val < best_grid_val:
-                        best_grid_val = val
-                        best_grid_params = np.array([g, b])
-
-            init_params = best_grid_params + np.random.randn(2) * 0.1
-        else:
-            # Mix strategies: first half warmstart, second half random exploration
-            if run_idx < num_runs // 2 and prev_best_params is not None:
-                # Warmstart from previous p's best parameters
-                base_params = warmstart_from_previous(prev_best_params, p)
-                noise_scale = 0.05 + 0.08 * run_idx
+        if prev_best_params is not None and run_idx < num_runs // 2:
+            # simple warmstart heuristic for MA-QAOA
+            prev_p = len(prev_best_params) // (m + n)
+            prev_gamma = prev_best_params[:prev_p*m].reshape((prev_p, m))
+            prev_beta = prev_best_params[prev_p*m:].reshape((prev_p, n))
+            
+            # just repeat the last layer if p increased
+            if p > prev_p:
+                new_gamma = np.vstack([prev_gamma, prev_gamma[-1:]])
+                new_beta = np.vstack([prev_beta, prev_beta[-1:]])
             else:
-                # Random exploration in promising parameter regions
-                base_params = np.concatenate([
-                    np.random.uniform(0.1, 2.0, p),
-                    np.random.uniform(0.1, np.pi / 2, p)
-                ])
-                noise_scale = 0.2
-
-            init_params = base_params + np.random.randn(2 * p) * noise_scale
-
-        # Clip to bounds
-        bounds = [(0.01, np.pi)] * p + [(0.01, np.pi / 2)] * p
-        init_params = np.clip(init_params,
-                              [b[0] for b in bounds],
-                              [b[1] for b in bounds])
-
-        # ── Optimizer: alternate between L-BFGS-B and COBYLA ──
-        method = "L-BFGS-B" if run_idx % 3 != 2 else "COBYLA"
-        opt_kwargs = {"maxiter": 300, "ftol": 1e-12} if method == "L-BFGS-B" else {"maxiter": 500, "rhobeg": 0.3}
-
-        if method == "L-BFGS-B":
-            result = minimize(neg_expectation, init_params, method=method,
-                              bounds=bounds, options=opt_kwargs)
+                new_gamma = prev_gamma
+                new_beta = prev_beta
+            base_params = np.concatenate([new_gamma.flatten(), new_beta.flatten()])
+            init_params = base_params + np.random.randn(p * (m + n)) * 0.05
         else:
-            result = minimize(neg_expectation, init_params, method=method,
-                              options=opt_kwargs)
-            # Clip COBYLA result to bounds (COBYLA doesn't enforce bounds natively)
-            result.x = np.clip(result.x, [b[0] for b in bounds], [b[1] for b in bounds])
+            # Random initialization for MA-QAOA
+            gamma_init = np.random.uniform(0.1, np.pi, p * m)
+            beta_init = np.random.uniform(0.1, np.pi / 2, p * n)
+            init_params = np.concatenate([gamma_init, beta_init])
+
+        bounds = [(0.01, np.pi)] * (p * m) + [(0.01, np.pi / 2)] * (p * n)
+        init_params = np.clip(init_params, [b[0] for b in bounds], [b[1] for b in bounds])
+
+        method = "L-BFGS-B"
+        opt_kwargs = {"maxiter": 300, "ftol": 1e-10}
+
+        result = minimize(neg_expectation, init_params, method=method,
+                          bounds=bounds, options=opt_kwargs)
 
         opt_cut = -result.fun
         opt_params = result.x
@@ -666,11 +627,15 @@ def optimize_qaoa(G, p, num_runs=NUM_QAOA_RUNS, verbose=True, prev_best_params=N
             "converged": result.success,
         })
 
-        if verbose and run_idx == 0:
+        if verbose:
             print(f"    Run {run_idx + 1}: cut = {opt_cut:.4f} (converged: {result.success})")
 
     cut_values = np.array([r["cut_value"] for r in results])
     best_idx = np.argmax(cut_values)
+    
+    # We must format the best_params to be readable if needed, but passing them back raw is fine.
+    # qaoa_best_bitstring will need arrays, but qaoa_results only stores the raw params.
+    # We need to change how qaoa_best_bitstring uses best_params in main()
 
     return {
         "p": p,
@@ -682,10 +647,6 @@ def optimize_qaoa(G, p, num_runs=NUM_QAOA_RUNS, verbose=True, prev_best_params=N
         "all_results": results,
     }
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 6: VISUALIZATION & COMPARISON
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def plot_approximation_ratio(qaoa_results, optimal_cut, gw_ratio, greedy_ratio):
     """Plot approximation ratio r vs QAOA depth p with error bars."""
@@ -811,6 +772,7 @@ def plot_before_after(G, optimal_partition):
 
 def plot_convergence(G, qaoa_results):
     """Plot parameter landscape heatmap for p=1."""
+    return  # Disabled for MA-QAOA as the parameter space is > 2D
     if not qaoa_results or qaoa_results[0]["p"] != 1:
         return
 
@@ -994,10 +956,13 @@ def main():
     plot_convergence(G, qaoa_results)
 
     # Partitioned grid visualization
-    best_qaoa_x, best_qaoa_cut, best_prob = qaoa_best_bitstring(
-        G, qaoa_results[-1]["best_params"][:qaoa_results[-1]["p"]],
-        qaoa_results[-1]["best_params"][qaoa_results[-1]["p"]:]
-    )
+    p_best = qaoa_results[-1]["p"]
+    m_edges = G.number_of_edges()
+    n_nodes = G.number_of_nodes()
+    best_params_flat = qaoa_results[-1]["best_params"]
+    gamma_best = best_params_flat[:p_best*m_edges].reshape((p_best, m_edges))
+    beta_best = best_params_flat[p_best*m_edges:].reshape((p_best, n_nodes))
+    best_qaoa_x, best_qaoa_cut, best_prob = qaoa_best_bitstring(G, gamma_best, beta_best)
     visualize_grid(G, title="QAOA Optimal Fault-Zone Partitioning",
                    filename="grid_partitioned_qaoa.png",
                    partition=dict(enumerate(best_qaoa_x)))
