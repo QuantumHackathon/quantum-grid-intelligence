@@ -29,6 +29,8 @@ $$\min_x \ x^T Q x$$
 
 where $Q_{ij} = 2w_{ij}$ (off-diagonal) and $Q_{ii} = -\sum_{j:(i,j) \in E} w_{ij}$ (diagonal).
 
+*Note: No penalty terms are required since the Max-Cut QUBO formulation is naturally unconstrained.*
+
 The Ising mapping: $H_C = \sum_{(i,j) \in E} \frac{w_{ij}}{2}(I - Z_i Z_j)$
 
 ### 1.4 SDG Alignment
