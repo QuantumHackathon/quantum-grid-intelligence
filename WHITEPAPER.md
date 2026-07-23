@@ -1,6 +1,18 @@
-# Quantum Grid Intelligence: Fault-Zone Partitioning via QAOA for Costa Rica's ICE Transmission Network
+---
+title: "Quantum Grid Intelligence: Fault-Zone Partitioning via Multi-Angle Warm-Started QAOA for Costa Rica's ICE Transmission Network"
+subtitle: "Quantathon CR 2026 · Challenge 1"
+author:
+  - "Kevin Membreño"
+  - "Sebastián Salazar"
+date: "July 2026"
+lang: en
+---
 
-**Quantathon CR 2026 — Challenge 1**
+## Abstract
+
+We study fault-zone partitioning of Costa Rica's ICE high-voltage transmission network — dividing the grid into segments that can self-isolate during faults to prevent cascading blackouts — formulated as Max-Cut on an 8-node weighted graph derived from public ICE data. We introduce **Multi-Angle Warm-Started QAOA (MA-QAOA)**, which combines Goemans-Williamson SDP warm-starting with a bias-preserving mixer Hamiltonian and per-edge/per-qubit angle parameterization, and benchmark it against Brute Force, Greedy, and Goemans-Williamson (GW) classical baselines. At depth $p=1$, MA-QAOA reaches an approximation ratio $r \approx 0.987$ (best of 10 restarts; mean $0.905 \pm 0.065$), improving to $r \approx 1.000$ by $p=3$. Beyond simulation, we re-express the optimized circuit in **Guppy** — Quantinuum's embedded quantum language — compile it to **HUGR**, and execute it on **Quantinuum Nexus**'s Selene emulator (5000 shots), reproducing the idealized ratio (0.987 vs. 0.987) on real execution infrastructure. We report these results alongside an explicit accounting of their limits: at 8 nodes GW alone already reaches the exact optimum, MA-QAOA's $p=1$ circuit carries 17 classical parameters against a 256-state search space, and the Selene backend used here is a noiseless statevector simulator, not physical hardware. We present this as a reproducible framework for quantum-enhanced grid optimization — one whose value lies in the methodology and its Nexus-validated execution path, not in a claim of quantum advantage at this scale.
+
+**Keywords**: Quantum Approximate Optimization Algorithm (QAOA); Multi-Angle QAOA; Warm-Starting; Max-Cut; Goemans-Williamson; QUBO; Guppy; HUGR; Quantinuum Nexus; Smart Grid; Fault-Zone Partitioning
 
 ---
 
@@ -10,9 +22,12 @@
 
 The global surge in AI-driven electricity demand, projected to double data center consumption by 2030, demands smarter utilization of existing grid infrastructure. Fault-zone partitioning divides an electrical network into segments that can isolate independently during faults, preventing cascading blackouts and enabling renewable microgrid islanding.
 
+![End-to-end pipeline: grid data → graph → QUBO/Ising → classical + quantum solve → optimal partition → Guppy/HUGR → Quantinuum Nexus.](docs/diagrams/output/vertical/01-pipeline-overview.png){width=92%}
+
 ### 1.2 Mathematical Formulation
 
 We model the problem as **Max-Cut** on a weighted graph $G = (V, E, w)$ where:
+
 - **Nodes** $V$: substations/generation centers in Costa Rica's ICE transmission network
 - **Edges** $E$: high-voltage transmission lines
 - **Weights** $w_{ij}$: isolation benefit (higher = more beneficial to separate)
@@ -58,9 +73,13 @@ We model an 8-node simplified representation of the ICE transmission backbone:
 
 9 edges representing 230kV/138kV transmission lines with weights based on line length and fault exposure. Source: topology derived from ICE open data portal (datos-ice-se.opendata.arcgis.com).
 
+![Conceptual topology of the 8-node ICE grid, colored by generation type, with the optimal fault-zone cut highlighted on the edges it crosses.](docs/diagrams/output/vertical/05-grid-topology-schematic.png){width=92%}
+
 ---
 
 ## 3. Classical Baselines
+
+![Classical baselines and MA-QAOA branch from the same Max-Cut problem; MA-QAOA's idealized circuit is re-run, unmodified, on Quantinuum Nexus.](docs/diagrams/output/vertical/03-benchmark-tree.png){width=85%}
 
 ### 3.1 Brute Force (Exact)
 
@@ -97,6 +116,8 @@ Standard QAOA at $p=1$ has a theoretical guarantee ($r \ge 0.6924$) strictly bel
 
 On the 8-node grid ($n=8$ qubits, $m=9$ edges), this gives $p \cdot (m+n) = 17p$ free classical parameters — 17 at $p=1$, 34 at $p=2$, 51 at $p=3$ — optimized against the idealized statevector simulator. See §6.2 for why that parameter count matters when interpreting the results.
 
+![MA-QAOA architecture: Goemans-Williamson warm start feeds one representative layer (per-edge cost unitary, per-qubit mixer), repeated p times, ending in measurement.](docs/diagrams/output/vertical/02-maqaoa-circuit.png){width=85%}
+
 ### 4.2 Statevector Simulation
 
 Exact statevector evolution (equivalent to noiseless H2 emulator). 8 qubits, $2^8 = 256$ amplitudes.
@@ -110,17 +131,29 @@ Equivalent circuit constructed using Pytket for Quantinuum H2 emulator submissio
 The results in §4.1–4.3 come from an idealized, noiseless NumPy statevector simulation. To validate the circuit on genuine Quantinuum execution infrastructure rather than only a hand-rolled simulator, the optimized MA-QAOA $p=1$ circuit was re-expressed in **Guppy** — Quantinuum's Python-embedded, statically-typed quantum language — compiled to **HUGR** (Quantinuum's intermediate representation), and executed on **Quantinuum Nexus** against the Nexus-hosted **Selene emulator** (`SeleneConfig`, a noiseless statevector backend reached via genuine shot-based execution: `qnx.hugr.upload` → `qnx.start_execute_job` → 5000 shots → measurement counts).
 
 **Gate-level translation.** The warm-start preparation becomes $R_y(\theta_i^{\text{init}})$ per qubit, with $\theta_i^{\text{init}} = 2\arcsin(\sqrt{c_i})$. The cost unitary maps to Guppy's native `zz_phase` gate, applied once per edge with **that edge's own** $\gamma_{ij}$: $\text{zz\_phase}(\theta_{ij}) = e^{-i\theta_{ij}/2 \cdot Z\otimes Z}$, with $\theta_{ij} = -\gamma_{ij} w_{ij}$ (sign and factor-of-two differ from the NumPy convention $e^{i(\gamma_{ij} w_{ij}/2)Z\otimes Z}$ and must be converted explicitly). The custom bias-preserving mixer — a general $2\times2$ unitary in NumPy — has no native gate, so it was decomposed exactly (no approximation) as
-$$e^{-i\beta_i H_B(c_i)} = R_n(2\beta_i) = R_y(\theta_i) \cdot R_z(2\beta_i) \cdot R_y(-\theta_i), \qquad \theta_i = \operatorname{atan2}\!\big(-2\sqrt{c_i(1-c_i)},\, 2c_i-1\big),$$
+$$e^{-i\beta_i H_B(c_i)} = R_n(2\beta_i) = R_y(\theta_i) \cdot R_z(2\beta_i) \cdot R_y(-\theta_i), \qquad \theta_i = \text{atan2}(-2\sqrt{c_i(1-c_i)},\ 2c_i-1),$$
 applied per qubit with **that qubit's own** $\beta_i$, verified numerically against the original matrix (random $c_i,\beta$, matching to $10^{-8}$) before being written into the circuit; as a matrix product, $R_y(-\theta_i)$ is applied *first* in circuit order and $R_y(\theta_i)$ *last*.
+
+![Guppy → HUGR → Quantinuum Nexus execution flow: the optimized circuit is rebuilt in Guppy, compiled to HUGR, uploaded, and executed with 5000 shots on the Selene emulator.](docs/diagrams/output/vertical/04-guppy-nexus-execution.png){width=85%}
 
 **Results ($p=1$):**
 
 | Execution | Cut value | Ratio $r$ |
-|---|---|---|
+|----------------------------------------------|-----------|-----------|
 | MA-QAOA idealized (NumPy statevector) | 35.139 | 0.987 |
 | MA-QAOA on Nexus (Selene emulator, 5000 shots) | 35.130 | 0.987 |
 
 The two agree to within shot noise, confirming the Guppy circuit is a faithful re-expression of the NumPy one. Because Nexus execute-jobs require a closed (parameterless) circuit, $\vec{\gamma}^*,\vec{\beta}^*$ are still optimized against the idealized NumPy simulator and baked into the Guppy circuit as compile-time constants rather than optimized in a closed loop against real Nexus shots.
+
+**Evidence trail on the Quantinuum Nexus dashboard**, in execution order:
+
+![HUGR program `ws-qaoa-p1-ice-grid` uploaded to the `quantum-grid-intelligence` project on Quantinuum Nexus.](nexus/04.png){width=92%}
+
+![Five completed `ws-qaoa-p1-execute` jobs on the Selene backend, confirming repeated, reproducible execution rather than a single lucky run.](nexus/02.png){width=92%}
+
+![Job detail showing the exact backend configuration used: `SeleneConfig` with `NoErrorModel` and `StatevectorSimulator`, 5000 shots, status `Completed` — the concrete evidence behind the "noiseless Selene, not hardware" caveat in §6.4.](nexus/03.png){width=92%}
+
+![Raw Selene execution result: measurement counts for register `"c"`, fed into `energy_from_counts()` to compute the Nexus-side approximation ratio.](nexus/05.png){width=92%}
 
 ### 4.5 Optimization Strategy
 
@@ -135,7 +168,7 @@ The two agree to within shot noise, confirming the Guppy circuit is a faithful r
 ### 5.1 Benchmark Comparison
 
 | Method | Cut Value | Approx. Ratio $r$ | Std |
-|--------|-----------|-------------------|-----|
+|-----------------------------------------------|-----------|--------------------|--------------------------------------|
 | Brute Force (optimal) | 35.60 | 1.000 | — |
 | Goemans-Williamson (best of 200 rounds) | 35.60 | 1.000 | mean $r=0.982$, cut $34.96 \pm 0.56$ |
 | Greedy | 35.40 | 0.994 | — |
@@ -146,21 +179,21 @@ The two agree to within shot noise, confirming the Guppy circuit is a faithful r
 
 *Exact values populated from `quantum_grid_intelligence.py` (NumPy rows) and `run_on_nexus.py` (Nexus row). See `results/benchmark_table.csv`.*
 
-### 5.2 Approximation Ratio vs p
+### 5.2 Approximation Ratio vs. $p$
 
-Plot: `results/approximation_ratio_vs_p.png`
+![Approximation ratio r vs. QAOA depth p, with error bars from independent runs; GW and Greedy baselines shown as horizontal reference lines.](results/approximation_ratio_vs_p.png){width=85%}
 
 Shows monotonic improvement with increasing $p$, with error bars from 7 independent runs. GW and Greedy baselines shown as horizontal reference lines.
 
 ### 5.3 Fault-Zone Visualization
 
-Plot: `results/grid_before_after.png`
+![Grid before (full cascading risk) and after (isolated fault zones) optimal partitioning.](results/grid_before_after.png){width=92%}
 
 Side-by-side comparison of unpartitioned grid (full cascading risk) vs. optimal partitioning (isolated fault zones).
 
 ### 5.4 Cost Landscape (MA-QAOA slice)
 
-Plot: `results/convergence_landscape.png`
+![2D slice of the p=1 MA-QAOA cost landscape along its two most sensitive parameters, 15 others fixed at their optimum.](results/convergence_landscape.png){width=80%}
 
 MA-QAOA's $p=1$ landscape has $m+n=17$ dimensions — too many to plot directly. We fix 15 of the 17 parameters at their found-optimal values and sweep the remaining two, chosen as the pair with the largest central-difference gradient magnitude at the optimum (i.e. the two directions the landscape is locally most sensitive to, not an arbitrary choice of axes). This directly illustrates the "optimizer sensitivity" limitation in §6.6: the slice found is comparatively smooth and monotonic near the optimum along these two axes, with the optimum sitting at a search-space boundary for at least one of them — consistent with L-BFGS-B settling into a boundary-constrained local solution rather than an interior one.
 
@@ -170,19 +203,33 @@ MA-QAOA's $p=1$ landscape has $m+n=17$ dimensions — too many to plot directly.
 
 This section is required and central to our submission.
 
-1. **Best-of-10 MA-QAOA ($r=0.987$ at $p=1$) is not directly comparable to the textbook QAOA vs. GW comparison.** The Farhi et al. bound ($r \ge 0.6924$ for $p=1$) and the "QAOA does not outperform GW" folklore both refer to the standard *two-angle* QAOA ansatz. MA-QAOA is a strictly more expressive ansatz (§6.2), so beating that particular bound is expected, not a violation of it — GW's own guarantee ($r \ge 0.878$) remains a fair classical baseline, and on this instance GW still reaches the exact optimum ($r=1.000$) with a mean of $r=0.982$ across rounding rounds.
+### 6.1 Best-of-10 MA-QAOA ($r=0.987$ at $p=1$) is not directly comparable to the textbook QAOA vs. GW comparison
 
-2. **More classical parameters than the problem needs, at this scale.** MA-QAOA's $p=1$ circuit has $m+n=17$ free parameters (9 per-edge $\gamma$ + 8 per-qubit $\beta$) optimized classically against a search space of only $2^8=256$ states — at $p=3$ that grows to 51 parameters. With that much variational freedom relative to the problem size, part of the reported ratio plausibly reflects the classical optimizer's ability to fit an expressive parameterization to a small, fully-observable cost landscape, rather than a genuinely quantum effect. We would expect this advantage to compress as the grid scales and the parameter-to-state-space ratio drops — a claim this submission does not yet test empirically.
+The Farhi et al. bound ($r \ge 0.6924$ for $p=1$) and the "QAOA does not outperform GW" folklore both refer to the standard *two-angle* QAOA ansatz. MA-QAOA is a strictly more expressive ansatz (§6.2), so beating that particular bound is expected, not a violation of it — GW's own guarantee ($r \ge 0.878$) remains a fair classical baseline, and on this instance GW still reaches the exact optimum ($r=1.000$) with a mean of $r=0.982$ across rounding rounds.
 
-3. **No quantum advantage at this scale.** With 8 nodes ($2^8 = 256$ states), brute force solves the problem in microseconds. The value of this work is demonstrating the algorithm, not claiming computational superiority.
+### 6.2 More classical parameters than the problem needs, at this scale
 
-4. **Selene emulator ≠ physical quantum hardware.** We validated the MA-QAOA circuit with real shot-based execution on Quantinuum Nexus (§4.4), but against Selene's default noiseless statevector backend, not a physical device or a noisy hardware emulator. Real quantum hardware would introduce gate errors, decoherence, and measurement noise that would degrade QAOA performance; we did not exercise Nexus's noise models (`QSystemErrorModel`, `DepolarizingErrorModel`) or implement noise mitigation (ZNE, Pauli twirling) in this submission.
+MA-QAOA's $p=1$ circuit has $m+n=17$ free parameters (9 per-edge $\gamma$ + 8 per-qubit $\beta$) optimized classically against a search space of only $2^8=256$ states — at $p=3$ that grows to 51 parameters. With that much variational freedom relative to the problem size, part of the reported ratio plausibly reflects the classical optimizer's ability to fit an expressive parameterization to a small, fully-observable cost landscape, rather than a genuinely quantum effect. We would expect this advantage to compress as the grid scales and the parameter-to-state-space ratio drops — a claim this submission does not yet test empirically.
 
-5. **Simplified grid topology.** The real ICE transmission network has hundreds of nodes. Our 8-node model captures geographic and topological structure but not the full complexity of the actual grid.
+### 6.3 No quantum advantage at this scale
 
-6. **Optimizer sensitivity.** QAOA cost landscapes are non-convex with many local minima, and MA-QAOA's larger parameter count makes this worse, not better, at higher $p$ — most $p=2$/$p=3$ runs in our benchmark did not formally converge within `maxiter=300`. While our warmstart strategy and multi-run approach mitigate this, we cannot guarantee global optimality of the variational parameters.
+With 8 nodes ($2^8 = 256$ states), brute force solves the problem in microseconds. The value of this work is demonstrating the algorithm, not claiming computational superiority.
 
-7. **Max-Cut is a simplification.** Real fault-zone partitioning involves additional constraints (load balancing, generation capacity within each zone, protection relay coordination) that are not captured by the pure Max-Cut formulation.
+### 6.4 Selene emulator ≠ physical quantum hardware
+
+We validated the MA-QAOA circuit with real shot-based execution on Quantinuum Nexus (§4.4), but against Selene's default noiseless statevector backend, not a physical device or a noisy hardware emulator. Real quantum hardware would introduce gate errors, decoherence, and measurement noise that would degrade QAOA performance; we did not exercise Nexus's noise models (`QSystemErrorModel`, `DepolarizingErrorModel`) or implement noise mitigation (ZNE, Pauli twirling) in this submission.
+
+### 6.5 Simplified grid topology
+
+The real ICE transmission network has hundreds of nodes. Our 8-node model captures geographic and topological structure but not the full complexity of the actual grid.
+
+### 6.6 Optimizer sensitivity
+
+QAOA cost landscapes are non-convex with many local minima, and MA-QAOA's larger parameter count makes this worse, not better, at higher $p$ — most $p=2$/$p=3$ runs in our benchmark did not formally converge within `maxiter=300`. While our warmstart strategy and multi-run approach mitigate this, we cannot guarantee global optimality of the variational parameters.
+
+### 6.7 Max-Cut is a simplification
+
+Real fault-zone partitioning involves additional constraints (load balancing, generation capacity within each zone, protection relay coordination) that are not captured by the pure Max-Cut formulation.
 
 ---
 
@@ -191,6 +238,14 @@ This section is required and central to our submission.
 We demonstrated Multi-Angle Warm-Started QAOA (MA-QAOA) for fault-zone partitioning of Costa Rica's ICE transmission network, achieving approximation ratios well above 0.6 (the competition target) at $p=1$ and improving with depth. Goemans-Williamson remains the fairer classical baseline at this scale — it reaches the exact optimum on this instance — and MA-QAOA's high ratio should be read alongside §6's honesty about its 17–51 free classical parameters relative to a 256-state search space, not as a claim of quantum superiority. Beyond simulation, we re-expressed the optimized circuit in Guppy — with its full per-edge/per-qubit parameterization — and executed it on Quantinuum Nexus's Selene emulator, reproducing the idealized ratio (0.987 vs. 0.987) with real shot-based execution — moving this submission from "circuit constructed but never run" to a validated result on Quantinuum's own execution infrastructure. This work establishes a reproducible framework for quantum-enhanced grid optimization that could become competitive as quantum hardware scales, noise mitigation matures, and classical optimization of $\vec{\gamma},\vec{\beta}$ is replaced by a closed loop against real Nexus execution.
 
 ---
+
+## Acknowledgments
+
+We thank the ICE Open Data Portal for the public transmission topology data underlying our grid model, and Quantinuum for the Guppy, HUGR, and Nexus toolchain used for real execution. This work was produced for Quantathon CR 2026, Challenge 1.
+
+## Authors
+
+**Kevin Membreño** and **Sebastián Salazar** — Team QuantumHackathon, Quantathon CR 2026.
 
 ## References
 

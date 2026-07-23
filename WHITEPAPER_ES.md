@@ -1,6 +1,18 @@
-# Inteligencia Cuántica en la Red: Particionamiento en Zonas de Falla mediante QAOA para la Red de Transmisión del ICE en Costa Rica
+---
+title: "Inteligencia Cuántica en la Red: Particionamiento en Zonas de Falla mediante QAOA Multi-Ángulo con Arranque en Caliente para la Red de Transmisión del ICE en Costa Rica"
+subtitle: "Quantathon CR 2026 · Reto 1"
+author:
+  - "Kevin Membreño"
+  - "Sebastián Salazar"
+date: "Julio 2026"
+lang: es
+---
 
-**Quantathon CR 2026 — Challenge 1**
+## Resumen
+
+Estudiamos el particionamiento en zonas de falla de la red de transmisión de alto voltaje del ICE en Costa Rica — dividir la red en segmentos que puedan aislarse a sí mismos durante fallas para prevenir apagones en cascada — formulado como Max-Cut sobre un grafo ponderado de 8 nodos derivado de datos públicos del ICE. Introducimos **QAOA Multi-Ángulo con Arranque en Caliente (MA-QAOA)**, que combina el arranque en caliente mediante SDP de Goemans-Williamson con un Hamiltoniano mezclador que preserva el sesgo y una parametrización por arista/por qubit, y lo comparamos contra las líneas base clásicas Fuerza Bruta, Voraz (Greedy) y Goemans-Williamson (GW). En profundidad $p=1$, MA-QAOA alcanza una razón de aproximación $r \approx 0.987$ (mejor de 10 reinicios; media $0.905 \pm 0.065$), mejorando a $r \approx 1.000$ en $p=3$. Más allá de la simulación, re-expresamos el circuito optimizado en **Guppy** — el lenguaje cuántico incrustado de Quantinuum —, lo compilamos a **HUGR**, y lo ejecutamos en el emulador Selene de **Quantinuum Nexus** (5000 shots), reproduciendo la razón idealizada (0.987 vs. 0.987) en infraestructura de ejecución real. Reportamos estos resultados junto con un recuento explícito de sus límites: con 8 nodos, GW por sí solo ya alcanza el óptimo exacto, el circuito $p=1$ de MA-QAOA carga 17 parámetros clásicos frente a un espacio de búsqueda de 256 estados, y el backend de Selene usado aquí es un simulador vectorizado sin ruido, no hardware físico. Presentamos esto como un marco reproducible para la optimización de redes mejorada cuánticamente — cuyo valor reside en la metodología y su ruta de ejecución validada en Nexus, no en una afirmación de ventaja cuántica a esta escala.
+
+**Palabras clave**: Algoritmo de Optimización Aproximada Cuántica (QAOA); QAOA Multi-Ángulo; Arranque en Caliente; Max-Cut; Goemans-Williamson; QUBO; Guppy; HUGR; Quantinuum Nexus; Red Eléctrica Inteligente; Particionamiento en Zonas de Falla
 
 ---
 
@@ -10,9 +22,12 @@
 
 El aumento global en la demanda de electricidad impulsada por la IA, que proyecta duplicar el consumo de los centros de datos para 2030, exige una utilización más inteligente de la infraestructura de red existente. El particionamiento en zonas de falla divide una red eléctrica en segmentos que pueden aislarse de manera independiente durante las fallas, previniendo apagones en cascada y permitiendo la operación en modo isla de microrredes renovables.
 
+![Flujo completo: datos de la red → grafo → QUBO/Ising → solución clásica + cuántica → partición óptima → Guppy/HUGR → Quantinuum Nexus.](docs/diagrams/output/vertical/01-pipeline-overview.png){width=92%}
+
 ### 1.2 Formulación Matemática
 
 Modelamos el problema como **Max-Cut** en un grafo ponderado $G = (V, E, w)$ donde:
+
 - **Nodos** $V$: subestaciones/centros de generación en la red de transmisión del ICE en Costa Rica.
 - **Aristas** $E$: líneas de transmisión de alto voltaje.
 - **Pesos** $w_{ij}$: beneficio de aislamiento (mayor = más beneficioso separar).
@@ -58,9 +73,13 @@ Modelamos una representación simplificada de 8 nodos de la red troncal de trans
 
 9 aristas representan líneas de transmisión de 230kV/138kV con pesos basados en la longitud de la línea y la exposición a fallas. Fuente: topología derivada del portal de datos abiertos del ICE (datos-ice-se.opendata.arcgis.com).
 
+![Topología conceptual de la red ICE de 8 nodos, coloreada por tipo de generación, con el corte óptimo de zonas de falla resaltado en las aristas que cruza.](docs/diagrams/output/vertical/05-grid-topology-schematic.png){width=92%}
+
 ---
 
 ## 3. Líneas Base Clásicas
+
+![Las líneas base clásicas y MA-QAOA parten del mismo problema Max-Cut; el circuito idealizado de MA-QAOA se re-ejecuta, sin modificaciones, en Quantinuum Nexus.](docs/diagrams/output/vertical/03-benchmark-tree.png){width=85%}
 
 ### 3.1 Fuerza Bruta (Exacto)
 
@@ -97,6 +116,8 @@ El QAOA estándar en $p=1$ tiene una garantía teórica ($r \ge 0.6924$) estrict
 
 En la red de 8 nodos ($n=8$ qubits, $m=9$ aristas), esto da $p \cdot (m+n) = 17p$ parámetros clásicos libres — 17 en $p=1$, 34 en $p=2$, 51 en $p=3$ — optimizados contra el simulador vectorizado idealizado. Ver §6.2 de por qué ese recuento de parámetros importa al interpretar los resultados.
 
+![Arquitectura de MA-QAOA: el arranque en caliente de Goemans-Williamson alimenta una capa representativa (unitario de costo por arista, mezclador por qubit), repetida p veces, terminando en medición.](docs/diagrams/output/vertical/02-maqaoa-circuit.png){width=85%}
+
 ### 4.2 Simulación Vectorizada (Statevector)
 
 Evolución exacta del vector de estado (equivalente al emulador sin ruido H2). 8 qubits, $2^8 = 256$ amplitudes.
@@ -110,17 +131,29 @@ Circuito equivalente construido usando Pytket para envío al emulador Quantinuum
 Los resultados en §4.1–4.3 provienen de una simulación vectorizada en NumPy, idealizada y sin ruido. Para validar el circuito en infraestructura de ejecución genuina de Quantinuum en lugar de solo en un simulador propio, el circuito MA-QAOA optimizado para $p=1$ fue re-expresado en **Guppy** — el lenguaje cuántico de tipado estático incrustado en Python de Quantinuum —, compilado a **HUGR** (la representación intermedia de Quantinuum), y ejecutado en **Quantinuum Nexus** contra el emulador **Selene** alojado en Nexus (`SeleneConfig`, un backend vectorizado sin ruido alcanzado mediante ejecución genuina basada en shots: `qnx.hugr.upload` → `qnx.start_execute_job` → 5000 shots → recuento de mediciones).
 
 **Traducción a nivel de compuertas.** La preparación de arranque en caliente se convierte en $R_y(\theta_i^{\text{init}})$ por qubit, con $\theta_i^{\text{init}} = 2\arcsin(\sqrt{c_i})$. El unitario de costo mapea a la compuerta nativa `zz_phase` de Guppy, aplicada una vez por arista con **la $\gamma_{ij}$ propia de esa arista**: $\text{zz\_phase}(\theta_{ij}) = e^{-i\theta_{ij}/2 \cdot Z\otimes Z}$, con $\theta_{ij} = -\gamma_{ij} w_{ij}$ (el signo y el factor de dos difieren de la convención de NumPy $e^{i(\gamma_{ij} w_{ij}/2)Z\otimes Z}$ y deben convertirse explícitamente). El mezclador personalizado que preserva el sesgo — un unitario general de $2\times2$ en NumPy — no tiene compuerta nativa, por lo que se descompuso exactamente (sin aproximación) como:
-$$e^{-i\beta_i H_B(c_i)} = R_n(2\beta_i) = R_y(\theta_i) \cdot R_z(2\beta_i) \cdot R_y(-\theta_i), \qquad \theta_i = \operatorname{atan2}\!\big(-2\sqrt{c_i(1-c_i)},\, 2c_i-1\big),$$
+$$e^{-i\beta_i H_B(c_i)} = R_n(2\beta_i) = R_y(\theta_i) \cdot R_z(2\beta_i) \cdot R_y(-\theta_i), \qquad \theta_i = \text{atan2}(-2\sqrt{c_i(1-c_i)},\ 2c_i-1),$$
 aplicado por qubit con **la $\beta_i$ propia de ese qubit**, verificado numéricamente contra la matriz original (para $c_i,\beta$ aleatorios, coincidiendo hasta $10^{-8}$) antes de ser escrito en el circuito; como producto de matrices, $R_y(-\theta_i)$ se aplica *primero* en el orden del circuito y $R_y(\theta_i)$ *último*.
+
+![Flujo de ejecución Guppy → HUGR → Quantinuum Nexus: el circuito optimizado se reconstruye en Guppy, se compila a HUGR, se sube y se ejecuta con 5000 shots en el emulador Selene.](docs/diagrams/output/vertical/04-guppy-nexus-execution.png){width=85%}
 
 **Resultados ($p=1$):**
 
 | Ejecución | Valor de Corte | Razón $r$ |
-|---|---|---|
+|----------------------------------------------|-----------------|-----------|
 | MA-QAOA idealizado (NumPy) | 35.139 | 0.987 |
 | MA-QAOA en Nexus (Emulador Selene, 5000 shots) | 35.130 | 0.987 |
 
 Los dos concuerdan dentro del ruido estadístico (shot noise), confirmando que el circuito de Guppy es una re-expresión fiel del de NumPy. Debido a que los trabajos de ejecución de Nexus requieren un circuito cerrado (sin parámetros libres), $\vec{\gamma}^*,\vec{\beta}^*$ todavía se optimizan contra el simulador ideal de NumPy y se integran en el circuito de Guppy como constantes de tiempo de compilación, en lugar de optimizarse en un bucle cerrado contra shots reales de Nexus.
+
+**Rastro de evidencia en el panel de Quantinuum Nexus**, en orden de ejecución:
+
+![Programa HUGR `ws-qaoa-p1-ice-grid` subido al proyecto `quantum-grid-intelligence` en Quantinuum Nexus.](nexus/04.png){width=92%}
+
+![Cinco trabajos `ws-qaoa-p1-execute` completados en el backend Selene, confirmando ejecución repetida y reproducible en lugar de una sola corrida afortunada.](nexus/02.png){width=92%}
+
+![Detalle del trabajo mostrando la configuración exacta del backend: `SeleneConfig` con `NoErrorModel` y `StatevectorSimulator`, 5000 shots, estado `Completed` — la evidencia concreta detrás de la advertencia "Selene sin ruido, no hardware" de §6.4.](nexus/03.png){width=92%}
+
+![Resultado crudo de ejecución en Selene: recuento de mediciones para el registro `"c"`, alimentado a `energy_from_counts()` para calcular la razón de aproximación del lado de Nexus.](nexus/05.png){width=92%}
 
 ### 4.5 Estrategia de Optimización
 
@@ -135,7 +168,7 @@ Los dos concuerdan dentro del ruido estadístico (shot noise), confirmando que e
 ### 5.1 Tabla de Comparación (Benchmark)
 
 | Método | Valor de Corte | Razón Aprox. $r$ | Desv. Est. |
-|--------|-----------|-------------------|-----|
+|-----------------------------------------------|-----------------|--------------------|--------------------------------------|
 | Fuerza Bruta (óptimo) | 35.60 | 1.000 | — |
 | Goemans-Williamson (mejor de 200 rondas) | 35.60 | 1.000 | media $r=0.982$, corte $34.96 \pm 0.56$ |
 | Voraz (Greedy) | 35.40 | 0.994 | — |
@@ -146,21 +179,21 @@ Los dos concuerdan dentro del ruido estadístico (shot noise), confirmando que e
 
 *Valores exactos generados desde `quantum_grid_intelligence.py` y `run_on_nexus.py`. Ver `results/benchmark_table.csv`.*
 
-### 5.2 Razón de Aproximación vs p
+### 5.2 Razón de Aproximación vs. $p$
 
-Gráfica: `results/approximation_ratio_vs_p.png`
+![Razón de aproximación r vs. profundidad p de QAOA, con barras de error de corridas independientes; las líneas base de GW y Voraz se muestran como referencias horizontales.](results/approximation_ratio_vs_p.png){width=85%}
 
-Muestra una mejora monotónica a medida que aumenta $p$, con barras de error de 10 corridas independientes. Las líneas base de GW y Voraz (Greedy) se muestran como referencias horizontales.
+Muestra una mejora monotónica a medida que aumenta $p$, con barras de error de 7 corridas independientes. Las líneas base de GW y Voraz (Greedy) se muestran como referencias horizontales.
 
 ### 5.3 Visualización de las Zonas de Falla
 
-Gráfica: `results/grid_before_after.png`
+![Red antes (riesgo completo de cascada) y después (zonas de falla aisladas) del particionamiento óptimo.](results/grid_before_after.png){width=92%}
 
 Comparación lado a lado de la red sin particionar (riesgo completo de cascada) vs. particionamiento óptimo (zonas de falla aisladas).
 
 ### 5.4 Paisaje de Costos (corte MA-QAOA)
 
-Gráfica: `results/convergence_landscape.png`
+![Corte 2D del paisaje de costo p=1 de MA-QAOA a lo largo de sus dos parámetros más sensibles, los otros 15 fijados en su óptimo.](results/convergence_landscape.png){width=80%}
 
 El paisaje $p=1$ de MA-QAOA tiene $m+n=17$ dimensiones — demasiadas para graficar directamente. Fijamos 15 de los 17 parámetros en los valores óptimos encontrados y barremos los dos restantes, elegidos como el par con la mayor magnitud de gradiente de diferencia central en el óptimo (es decir, las dos direcciones a las que el paisaje es localmente más sensible, no una elección arbitraria de ejes). Esto ilustra directamente la limitación de "sensibilidad del optimizador" en §6.6: el corte encontrado es comparativamente suave y monotónico cerca del óptimo a lo largo de estos dos ejes, con el óptimo situado en un límite del espacio de búsqueda para al menos uno de ellos — consistente con L-BFGS-B estableciéndose en una solución local restringida por límites en lugar de una interior.
 
@@ -170,19 +203,33 @@ El paisaje $p=1$ de MA-QAOA tiene $m+n=17$ dimensiones — demasiadas para grafi
 
 Esta sección es obligatoria y central en nuestra entrega.
 
-1. **El "Mejor de 10" de MA-QAOA ($r=0.987$ en $p=1$) no es directamente comparable con la comparación de libro de texto de QAOA vs. GW.** El límite de Farhi et al. ($r \ge 0.6924$ para $p=1$) y el mito de que "QAOA no supera a GW" se refieren al ansatz estándar de QAOA de *dos ángulos*. MA-QAOA es un ansatz estrictamente más expresivo (§6.2), por lo que superar ese límite particular es de esperarse, no una violación del mismo — la propia garantía de GW ($r \ge 0.878$) sigue siendo una línea base clásica justa, y en esta instancia GW todavía alcanza el óptimo exacto ($r=1.000$) con una media de $r=0.982$ a través de las rondas de redondeo.
+### 6.1 El "Mejor de 10" de MA-QAOA ($r=0.987$ en $p=1$) no es directamente comparable con la comparación de libro de texto de QAOA vs. GW
 
-2. **Más parámetros clásicos de los que necesita el problema, a esta escala.** El circuito MA-QAOA $p=1$ tiene $m+n=17$ parámetros libres (9 $\gamma$ por arista + 8 $\beta$ por qubit) optimizados clásicamente contra un espacio de búsqueda de solo $2^8=256$ estados — en $p=3$ eso crece a 51 parámetros. Con tanta libertad variacional en relación con el tamaño del problema, parte de la razón de aproximación reportada refleja de manera plausible la capacidad del optimizador clásico para ajustar una parametrización expresiva a un paisaje de costos pequeño y completamente observable, en lugar de un efecto genuinamente cuántico. Esperaríamos que esta ventaja se comprima a medida que la red crezca y la relación de parámetros a espacio de estados caiga — una afirmación que esta entrega aún no prueba empíricamente.
+El límite de Farhi et al. ($r \ge 0.6924$ para $p=1$) y el mito de que "QAOA no supera a GW" se refieren al ansatz estándar de QAOA de *dos ángulos*. MA-QAOA es un ansatz estrictamente más expresivo (§6.2), por lo que superar ese límite particular es de esperarse, no una violación del mismo — la propia garantía de GW ($r \ge 0.878$) sigue siendo una línea base clásica justa, y en esta instancia GW todavía alcanza el óptimo exacto ($r=1.000$) con una media de $r=0.982$ a través de las rondas de redondeo.
 
-3. **Sin ventaja cuántica a esta escala.** Con 8 nodos ($2^8 = 256$ estados), la fuerza bruta resuelve el problema en microsegundos. El valor de este trabajo es demostrar el algoritmo, no afirmar superioridad computacional.
+### 6.2 Más parámetros clásicos de los que necesita el problema, a esta escala
 
-4. **El emulador Selene ≠ hardware cuántico físico.** Validamos el circuito MA-QAOA con ejecución real basada en shots en Quantinuum Nexus (§4.4), pero contra el backend por defecto de Selene que es un vector de estado sin ruido, no un dispositivo físico o un emulador de hardware con ruido. El hardware cuántico real introduciría errores de compuerta, decoherencia y ruido de medición que degradarían el rendimiento de QAOA; no utilizamos los modelos de error de Nexus (`QSystemErrorModel`, `DepolarizingErrorModel`) ni implementamos mitigación de ruido (ZNE, Pauli twirling) en esta entrega.
+El circuito MA-QAOA $p=1$ tiene $m+n=17$ parámetros libres (9 $\gamma$ por arista + 8 $\beta$ por qubit) optimizados clásicamente contra un espacio de búsqueda de solo $2^8=256$ estados — en $p=3$ eso crece a 51 parámetros. Con tanta libertad variacional en relación con el tamaño del problema, parte de la razón de aproximación reportada refleja de manera plausible la capacidad del optimizador clásico para ajustar una parametrización expresiva a un paisaje de costos pequeño y completamente observable, en lugar de un efecto genuinamente cuántico. Esperaríamos que esta ventaja se comprima a medida que la red crezca y la relación de parámetros a espacio de estados caiga — una afirmación que esta entrega aún no prueba empíricamente.
 
-5. **Topología de red simplificada.** La red de transmisión real del ICE tiene cientos de nodos. Nuestro modelo de 8 nodos captura la estructura geográfica y topológica pero no la complejidad total de la red real.
+### 6.3 Sin ventaja cuántica a esta escala
 
-6. **Sensibilidad del optimizador.** Los paisajes de costo de QAOA no son convexos y tienen muchos mínimos locales, y el gran número de parámetros de MA-QAOA empeora esto a profundidades mayores — la mayoría de las corridas de $p=2$/$p=3$ no convergieron formalmente dentro de `maxiter=300`. Si bien nuestra estrategia de arranque en caliente y corridas múltiples mitiga esto, no podemos garantizar la optimalidad global de los parámetros variacionales.
+Con 8 nodos ($2^8 = 256$ estados), la fuerza bruta resuelve el problema en microsegundos. El valor de este trabajo es demostrar el algoritmo, no afirmar superioridad computacional.
 
-7. **Max-Cut es una simplificación.** El particionamiento real de zonas de falla implica restricciones adicionales (equilibrio de carga, capacidad de generación dentro de cada zona, coordinación de relés de protección) que no son capturadas por la formulación pura de Max-Cut.
+### 6.4 El emulador Selene ≠ hardware cuántico físico
+
+Validamos el circuito MA-QAOA con ejecución real basada en shots en Quantinuum Nexus (§4.4), pero contra el backend por defecto de Selene que es un vector de estado sin ruido, no un dispositivo físico o un emulador de hardware con ruido. El hardware cuántico real introduciría errores de compuerta, decoherencia y ruido de medición que degradarían el rendimiento de QAOA; no utilizamos los modelos de error de Nexus (`QSystemErrorModel`, `DepolarizingErrorModel`) ni implementamos mitigación de ruido (ZNE, Pauli twirling) en esta entrega.
+
+### 6.5 Topología de red simplificada
+
+La red de transmisión real del ICE tiene cientos de nodos. Nuestro modelo de 8 nodos captura la estructura geográfica y topológica pero no la complejidad total de la red real.
+
+### 6.6 Sensibilidad del optimizador
+
+Los paisajes de costo de QAOA no son convexos y tienen muchos mínimos locales, y el gran número de parámetros de MA-QAOA empeora esto a profundidades mayores — la mayoría de las corridas de $p=2$/$p=3$ no convergieron formalmente dentro de `maxiter=300`. Si bien nuestra estrategia de arranque en caliente y corridas múltiples mitiga esto, no podemos garantizar la optimalidad global de los parámetros variacionales.
+
+### 6.7 Max-Cut es una simplificación
+
+El particionamiento real de zonas de falla implica restricciones adicionales (equilibrio de carga, capacidad de generación dentro de cada zona, coordinación de relés de protección) que no son capturadas por la formulación pura de Max-Cut.
 
 ---
 
@@ -191,6 +238,14 @@ Esta sección es obligatoria y central en nuestra entrega.
 Demostramos el uso de QAOA Multi-Ángulo con Arranque en Caliente (MA-QAOA) para el particionamiento en zonas de falla de la red de transmisión del ICE en Costa Rica, logrando razones de aproximación muy por encima de 0.6 (el objetivo de la competencia) en $p=1$ y mejorando con la profundidad. Goemans-Williamson sigue siendo la línea base clásica más justa a esta escala — alcanza el óptimo exacto en esta instancia — y la alta razón de MA-QAOA debe leerse junto a la honestidad de la §6 sobre sus 17–51 parámetros clásicos libres en relación con un espacio de búsqueda de 256 estados, no como una afirmación de superioridad cuántica. Más allá de la simulación, re-expresamos el circuito optimizado en Guppy — con su parametrización completa por arista/qubit — y lo ejecutamos en el emulador Selene de Quantinuum Nexus, reproduciendo la razón idealizada (0.987 vs. 0.987) con ejecución real basada en shots — trasladando esta entrega de "circuito construido pero nunca ejecutado" a un resultado validado en la propia infraestructura de ejecución de Quantinuum. Este trabajo establece un marco reproducible para la optimización de redes mejorada cuánticamente que podría volverse competitiva a medida que el hardware cuántico escale, la mitigación de ruido madure y la optimización clásica de $\vec{\gamma},\vec{\beta}$ se reemplace por un ciclo cerrado contra shots reales de Nexus.
 
 ---
+
+## Agradecimientos
+
+Agradecemos al Portal de Datos Abiertos del ICE por los datos públicos de topología de transmisión que sustentan nuestro modelo de red, y a Quantinuum por las herramientas Guppy, HUGR y Nexus usadas para la ejecución real. Este trabajo fue producido para Quantathon CR 2026, Reto 1.
+
+## Autores
+
+**Kevin Membreño** y **Sebastián Salazar** — Equipo QuantumHackathon, Quantathon CR 2026.
 
 ## Referencias
 
