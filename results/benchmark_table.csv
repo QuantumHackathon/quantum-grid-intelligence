@@ -1,7 +1,8 @@
 Method,Cut Value,Approx Ratio,Std,Partition
-Brute Force (Optimal),82.30,1.000,—,"[0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0]"
-Greedy,78.50,0.954,—,"[0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1]"
-Goemans-Williamson (200 rounds),81.60,0.991,± 3.41,—
-QAOA p=1 (10 runs),76.50,0.930,± 0.12,see best_params
-QAOA p=2 (10 runs),77.85,0.946,± 0.41,see best_params
-QAOA p=3 (10 runs),78.91,0.959,± 0.51,see best_params
+Brute Force (Optimal),35.60,1.000,—,"[0, 1, 1, 0, 1, 1, 0, 1]"
+Greedy,35.40,0.994,—,"[0, 1, 1, 0, 1, 0, 1, 1]"
+Goemans-Williamson (200 rounds),35.60,1.000,± 0.560,—
+QAOA p=1 (10 runs),32.20,0.905,± 2.326,see best_params
+QAOA p=2 (10 runs),34.86,0.979,± 0.785,see best_params
+QAOA p=3 (10 runs),35.46,0.996,± 0.093,see best_params
+"WS-QAOA p=1 (Nexus Selene, 5000 shots)",35.14,0.987,shot noise only,—
