@@ -429,6 +429,13 @@ def qaoa_statevector(G, gamma_list, beta_list):
     """
     Simulate Warm-Started QAOA circuit using exact statevector evolution.
     Uses continuous GW probabilities c_i for initial state and custom mixer.
+
+    Vectorized with NumPy (reshape + matrix ops / broadcast masks) instead of
+    per-basis-state Python loops — same math as the original bit-by-bit
+    implementation, but this function is the inner loop of the classical
+    optimizer (called on every objective-function evaluation, of which there
+    are many under MA-QAOA's larger per-edge/per-qubit parameter count), so
+    the Python-loop version dominated total runtime.
     """
     n = G.number_of_nodes()
     N = 2 ** n
@@ -436,17 +443,15 @@ def qaoa_statevector(G, gamma_list, beta_list):
     assert len(beta_list) == p
 
     nodes_list = list(G.nodes())
+    idx_of = {node: k for k, node in enumerate(nodes_list)}
     # Get warm-start probabilities or default to 0.5 (standard QAOA)
     c_i_list = [G.nodes[i].get("c_i", 0.5) for i in nodes_list]
 
-    # Initialize |ψ(c)⟩
-    psi = np.zeros(N, dtype=complex)
-    for k in range(N):
-        amp = 1.0
-        for i in range(n):
-            bit = (k >> (n - 1 - i)) & 1
-            amp *= np.sqrt(c_i_list[i]) if bit == 1 else np.sqrt(1 - c_i_list[i])
-        psi[k] = amp
+    # Initialize |ψ(c)⟩ as a tensor product of single-qubit warm-start states
+    # (qubit 0 = most-significant bit, matching the (k >> (n-1-i)) & 1 convention).
+    psi = np.array([1.0], dtype=complex)
+    for c_i in c_i_list:
+        psi = np.kron(psi, np.array([np.sqrt(1 - c_i), np.sqrt(c_i)], dtype=complex))
 
     # Pre-calculate mixer Hamiltonian for each node
     U_B_list = []
@@ -457,38 +462,36 @@ def qaoa_statevector(G, gamma_list, beta_list):
         ], dtype=complex)
         U_B_list.append(H_B_i)
 
-    edges_list = list(G.edges(data=True))
+    # Precompute, once per call, the +1/-1 ZZ eigenvalue pattern for every
+    # edge across all N basis states (depends only on graph structure).
+    k_array = np.arange(N)
+    edge_zz = []
+    for u, v, data in G.edges(data=True):
+        u_idx, v_idx = idx_of[u], idx_of[v]
+        bit_u = (k_array >> (n - 1 - u_idx)) & 1
+        bit_v = (k_array >> (n - 1 - v_idx)) & 1
+        edge_zz.append((data["weight"], 1 - 2 * (bit_u ^ bit_v)))
+
     for layer in range(p):
         gamma_layer = np.atleast_1d(gamma_list[layer])
         beta_layer = np.atleast_1d(beta_list[layer])
 
-        # ── Cost unitary: U(H_C, γ) ──
-        for idx, (u, v, data) in enumerate(edges_list):
-            w = data["weight"]
+        # ── Cost unitary: U(H_C, γ) — elementwise phase over all N amplitudes at once ──
+        for idx, (w, zz) in enumerate(edge_zz):
             gamma_val = gamma_layer[idx] if len(gamma_layer) > 1 else gamma_layer[0]
             angle = gamma_val * w / 2.0
-            u_idx = nodes_list.index(u)
-            v_idx = nodes_list.index(v)
-            for k in range(N):
-                bit_u = (k >> (n - 1 - u_idx)) & 1
-                bit_v = (k >> (n - 1 - v_idx)) & 1
-                zz = 1 - 2 * (bit_u ^ bit_v)
-                psi[k] *= np.exp(1j * angle * zz)
+            psi = psi * np.exp(1j * angle * zz)
 
-        # ── Mixer unitary: U(H_B, β) ──
+        # ── Mixer unitary: U(H_B, β) — apply each qubit's 2x2 U_B via reshape + matmul ──
+        psi_tensor = psi.reshape([2] * n)
         for qubit in range(n):
             beta_val = beta_layer[qubit] if len(beta_layer) > 1 else beta_layer[0]
             U_B = expm(-1j * beta_val * U_B_list[qubit])
-            psi_new = np.zeros_like(psi)
-            for k in range(N):
-                bit = (k >> (n - 1 - qubit)) & 1
-                k_flip = k ^ (1 << (n - 1 - qubit))
-                
-                if bit == 0:
-                    psi_new[k] += U_B[0, 0] * psi[k] + U_B[0, 1] * psi[k_flip]
-                else:
-                    psi_new[k] += U_B[1, 1] * psi[k] + U_B[1, 0] * psi[k_flip]
-            psi = psi_new
+            psi_tensor = np.moveaxis(psi_tensor, qubit, 0)
+            shape = psi_tensor.shape
+            psi_tensor = (U_B @ psi_tensor.reshape(2, -1)).reshape(shape)
+            psi_tensor = np.moveaxis(psi_tensor, 0, qubit)
+        psi = psi_tensor.reshape(N)
 
     return psi
 
@@ -498,21 +501,28 @@ def qaoa_expectation(G, gamma_list, beta_list):
     Compute ⟨ψ(γ,β)|H_C|ψ(γ,β)⟩ = expected Max-Cut value.
 
     H_C = Σ_{(i,j)∈E} (w_ij/2) · (I - Z_i·Z_j)
+
+    Vectorized: the per-basis-state cut value depends only on G, not on
+    gamma/beta, so it's built once with array ops (not recomputed via a
+    Python loop calling maxcut_value on every one of the N states, on every
+    single optimizer evaluation).
     """
     n = G.number_of_nodes()
     N = 2 ** n
     psi = qaoa_statevector(G, gamma_list, beta_list)
-
-    # Compute expectation value from probabilities
     probs = np.abs(psi) ** 2
-    expectation = 0.0
 
-    for k in range(N):
-        x = np.array([int(b) for b in format(k, f"0{n}b")])
-        cut = maxcut_value(x, G)
-        expectation += probs[k] * cut
+    nodes_list = list(G.nodes())
+    idx_of = {node: k for k, node in enumerate(nodes_list)}
+    k_array = np.arange(N)
+    cut_values = np.zeros(N)
+    for u, v, data in G.edges(data=True):
+        u_idx, v_idx = idx_of[u], idx_of[v]
+        bit_u = (k_array >> (n - 1 - u_idx)) & 1
+        bit_v = (k_array >> (n - 1 - v_idx)) & 1
+        cut_values += data["weight"] * (bit_u ^ bit_v)
 
-    return expectation
+    return float(np.dot(probs, cut_values))
 
 
 def qaoa_best_bitstring(G, gamma_list, beta_list):
@@ -771,33 +781,71 @@ def plot_before_after(G, optimal_partition):
 
 
 def plot_convergence(G, qaoa_results):
-    """Plot parameter landscape heatmap for p=1."""
-    return  # Disabled for MA-QAOA as the parameter space is > 2D
+    """Plot a 2D slice through the MA-QAOA p=1 cost landscape.
+
+    MA-QAOA's p=1 landscape has m+n dimensions (one gamma per edge, one beta
+    per qubit) — too many to plot directly. We fix all but two parameters at
+    their optimal (found) values and sweep those two, so the plot is still a
+    faithful cross-section of the real landscape rather than a standard-QAOA
+    stand-in. The two swept parameters aren't arbitrary: we pick the two with
+    the largest |central-difference gradient| at the optimum, i.e. the two
+    directions the landscape is locally most sensitive to.
+    """
     if not qaoa_results or qaoa_results[0]["p"] != 1:
         return
 
+    n = G.number_of_nodes()
+    m = G.number_of_edges()
+    edges_list = list(G.edges(data=True))
+    best_params = np.asarray(qaoa_results[0]["best_params"], dtype=float)
+    assert len(best_params) == m + n, "expected MA-QAOA's m-edge + n-qubit parameter vector"
+
+    def expectation_at(params):
+        gamma = params[:m].reshape(1, m)
+        beta = params[m:].reshape(1, n)
+        return qaoa_expectation(G, gamma, beta)
+
+    # Central-difference gradient magnitude at the optimum, per parameter.
+    eps = 1e-4
+    grad = np.zeros(m + n)
+    for k in range(m + n):
+        plus, minus = best_params.copy(), best_params.copy()
+        plus[k] += eps
+        minus[k] -= eps
+        grad[k] = (expectation_at(plus) - expectation_at(minus)) / (2 * eps)
+
+    top2 = np.argsort(-np.abs(grad))[:2]
+
+    def axis_label(k):
+        if k < m:
+            u, v, _ = edges_list[k]
+            return f"γ (edge {u}–{v})", 0.05, np.pi
+        qubit_idx = k - m
+        return f"β (qubit {qubit_idx})", 0.05, np.pi / 2
+
+    (label_a, lo_a, hi_a), (label_b, lo_b, hi_b) = axis_label(top2[0]), axis_label(top2[1])
+    range_a = np.linspace(lo_a, hi_a, 40)
+    range_b = np.linspace(lo_b, hi_b, 40)
+    landscape = np.zeros((len(range_b), len(range_a)))
+
+    for i, val_b in enumerate(range_b):
+        for j, val_a in enumerate(range_a):
+            params = best_params.copy()
+            params[top2[0]] = val_a
+            params[top2[1]] = val_b
+            landscape[i, j] = expectation_at(params)
+
     fig, ax = plt.subplots(figsize=(8, 6))
-
-    gamma_range = np.linspace(0.05, np.pi, 40)
-    beta_range = np.linspace(0.05, np.pi / 2, 40)
-    landscape = np.zeros((len(beta_range), len(gamma_range)))
-
-    for i, beta in enumerate(beta_range):
-        for j, gamma in enumerate(gamma_range):
-            landscape[i, j] = qaoa_expectation(G, [gamma], [beta])
-
-    im = ax.imshow(landscape, extent=[gamma_range[0], gamma_range[-1],
-                                       beta_range[0], beta_range[-1]],
+    im = ax.imshow(landscape, extent=[range_a[0], range_a[-1], range_b[0], range_b[-1]],
                    origin="lower", aspect="auto", cmap="viridis")
 
-    # Mark optimal point
-    best_params = qaoa_results[0]["best_params"]
-    ax.scatter(best_params[0], best_params[1], marker="*", color="#f85149",
-               s=200, zorder=5, label="Optimum found")
+    ax.scatter(best_params[top2[0]], best_params[top2[1]], marker="*", color="#f85149",
+               s=200, zorder=5, label=f"Optimum found ({m + n - 2} other params fixed)")
 
-    ax.set_xlabel("γ (cost unitary angle)", fontsize=11)
-    ax.set_ylabel("β (mixer unitary angle)", fontsize=11)
-    ax.set_title("QAOA p=1 Cost Landscape\n⟨H_C⟩ = Expected Max-Cut Value",
+    ax.set_xlabel(label_a, fontsize=11)
+    ax.set_ylabel(label_b, fontsize=11)
+    ax.set_title(f"MA-QAOA p=1 Cost Landscape — 2D slice along the\n"
+                 f"most sensitive of {m + n} parameters",
                  fontsize=12, fontweight="bold")
     plt.colorbar(im, ax=ax, label="Expected Cut Value")
     ax.legend(loc="upper right", fontsize=9, facecolor="#161b22",
