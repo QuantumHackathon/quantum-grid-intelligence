@@ -781,33 +781,71 @@ def plot_before_after(G, optimal_partition):
 
 
 def plot_convergence(G, qaoa_results):
-    """Plot parameter landscape heatmap for p=1."""
-    return  # Disabled for MA-QAOA as the parameter space is > 2D
+    """Plot a 2D slice through the MA-QAOA p=1 cost landscape.
+
+    MA-QAOA's p=1 landscape has m+n dimensions (one gamma per edge, one beta
+    per qubit) — too many to plot directly. We fix all but two parameters at
+    their optimal (found) values and sweep those two, so the plot is still a
+    faithful cross-section of the real landscape rather than a standard-QAOA
+    stand-in. The two swept parameters aren't arbitrary: we pick the two with
+    the largest |central-difference gradient| at the optimum, i.e. the two
+    directions the landscape is locally most sensitive to.
+    """
     if not qaoa_results or qaoa_results[0]["p"] != 1:
         return
 
+    n = G.number_of_nodes()
+    m = G.number_of_edges()
+    edges_list = list(G.edges(data=True))
+    best_params = np.asarray(qaoa_results[0]["best_params"], dtype=float)
+    assert len(best_params) == m + n, "expected MA-QAOA's m-edge + n-qubit parameter vector"
+
+    def expectation_at(params):
+        gamma = params[:m].reshape(1, m)
+        beta = params[m:].reshape(1, n)
+        return qaoa_expectation(G, gamma, beta)
+
+    # Central-difference gradient magnitude at the optimum, per parameter.
+    eps = 1e-4
+    grad = np.zeros(m + n)
+    for k in range(m + n):
+        plus, minus = best_params.copy(), best_params.copy()
+        plus[k] += eps
+        minus[k] -= eps
+        grad[k] = (expectation_at(plus) - expectation_at(minus)) / (2 * eps)
+
+    top2 = np.argsort(-np.abs(grad))[:2]
+
+    def axis_label(k):
+        if k < m:
+            u, v, _ = edges_list[k]
+            return f"γ (edge {u}–{v})", 0.05, np.pi
+        qubit_idx = k - m
+        return f"β (qubit {qubit_idx})", 0.05, np.pi / 2
+
+    (label_a, lo_a, hi_a), (label_b, lo_b, hi_b) = axis_label(top2[0]), axis_label(top2[1])
+    range_a = np.linspace(lo_a, hi_a, 40)
+    range_b = np.linspace(lo_b, hi_b, 40)
+    landscape = np.zeros((len(range_b), len(range_a)))
+
+    for i, val_b in enumerate(range_b):
+        for j, val_a in enumerate(range_a):
+            params = best_params.copy()
+            params[top2[0]] = val_a
+            params[top2[1]] = val_b
+            landscape[i, j] = expectation_at(params)
+
     fig, ax = plt.subplots(figsize=(8, 6))
-
-    gamma_range = np.linspace(0.05, np.pi, 40)
-    beta_range = np.linspace(0.05, np.pi / 2, 40)
-    landscape = np.zeros((len(beta_range), len(gamma_range)))
-
-    for i, beta in enumerate(beta_range):
-        for j, gamma in enumerate(gamma_range):
-            landscape[i, j] = qaoa_expectation(G, [gamma], [beta])
-
-    im = ax.imshow(landscape, extent=[gamma_range[0], gamma_range[-1],
-                                       beta_range[0], beta_range[-1]],
+    im = ax.imshow(landscape, extent=[range_a[0], range_a[-1], range_b[0], range_b[-1]],
                    origin="lower", aspect="auto", cmap="viridis")
 
-    # Mark optimal point
-    best_params = qaoa_results[0]["best_params"]
-    ax.scatter(best_params[0], best_params[1], marker="*", color="#f85149",
-               s=200, zorder=5, label="Optimum found")
+    ax.scatter(best_params[top2[0]], best_params[top2[1]], marker="*", color="#f85149",
+               s=200, zorder=5, label=f"Optimum found ({m + n - 2} other params fixed)")
 
-    ax.set_xlabel("γ (cost unitary angle)", fontsize=11)
-    ax.set_ylabel("β (mixer unitary angle)", fontsize=11)
-    ax.set_title("QAOA p=1 Cost Landscape\n⟨H_C⟩ = Expected Max-Cut Value",
+    ax.set_xlabel(label_a, fontsize=11)
+    ax.set_ylabel(label_b, fontsize=11)
+    ax.set_title(f"MA-QAOA p=1 Cost Landscape — 2D slice along the\n"
+                 f"most sensitive of {m + n} parameters",
                  fontsize=12, fontweight="bold")
     plt.colorbar(im, ax=ax, label="Expected Cut Value")
     ax.legend(loc="upper right", fontsize=9, facecolor="#161b22",
