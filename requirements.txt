@@ -12,5 +12,9 @@ cvxpy>=1.3.0
 pytket>=1.25.0
 pytket-quantinuum>=0.30.0
 
+# Guppy + Nexus (real execution on Quantinuum's Selene emulator)
+guppylang>=0.21.16
+qnexus>=0.46.0
+
 # Utilities
 tqdm>=4.65.0
