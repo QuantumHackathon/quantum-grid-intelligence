@@ -429,6 +429,13 @@ def qaoa_statevector(G, gamma_list, beta_list):
     """
     Simulate Warm-Started QAOA circuit using exact statevector evolution.
     Uses continuous GW probabilities c_i for initial state and custom mixer.
+
+    Vectorized with NumPy (reshape + matrix ops / broadcast masks) instead of
+    per-basis-state Python loops — same math as the original bit-by-bit
+    implementation, but this function is the inner loop of the classical
+    optimizer (called on every objective-function evaluation, of which there
+    are many under MA-QAOA's larger per-edge/per-qubit parameter count), so
+    the Python-loop version dominated total runtime.
     """
     n = G.number_of_nodes()
     N = 2 ** n
@@ -436,17 +443,15 @@ def qaoa_statevector(G, gamma_list, beta_list):
     assert len(beta_list) == p
 
     nodes_list = list(G.nodes())
+    idx_of = {node: k for k, node in enumerate(nodes_list)}
     # Get warm-start probabilities or default to 0.5 (standard QAOA)
     c_i_list = [G.nodes[i].get("c_i", 0.5) for i in nodes_list]
 
-    # Initialize |ψ(c)⟩
-    psi = np.zeros(N, dtype=complex)
-    for k in range(N):
-        amp = 1.0
-        for i in range(n):
-            bit = (k >> (n - 1 - i)) & 1
-            amp *= np.sqrt(c_i_list[i]) if bit == 1 else np.sqrt(1 - c_i_list[i])
-        psi[k] = amp
+    # Initialize |ψ(c)⟩ as a tensor product of single-qubit warm-start states
+    # (qubit 0 = most-significant bit, matching the (k >> (n-1-i)) & 1 convention).
+    psi = np.array([1.0], dtype=complex)
+    for c_i in c_i_list:
+        psi = np.kron(psi, np.array([np.sqrt(1 - c_i), np.sqrt(c_i)], dtype=complex))
 
     # Pre-calculate mixer Hamiltonian for each node
     U_B_list = []
@@ -457,38 +462,36 @@ def qaoa_statevector(G, gamma_list, beta_list):
         ], dtype=complex)
         U_B_list.append(H_B_i)
 
-    edges_list = list(G.edges(data=True))
+    # Precompute, once per call, the +1/-1 ZZ eigenvalue pattern for every
+    # edge across all N basis states (depends only on graph structure).
+    k_array = np.arange(N)
+    edge_zz = []
+    for u, v, data in G.edges(data=True):
+        u_idx, v_idx = idx_of[u], idx_of[v]
+        bit_u = (k_array >> (n - 1 - u_idx)) & 1
+        bit_v = (k_array >> (n - 1 - v_idx)) & 1
+        edge_zz.append((data["weight"], 1 - 2 * (bit_u ^ bit_v)))
+
     for layer in range(p):
         gamma_layer = np.atleast_1d(gamma_list[layer])
         beta_layer = np.atleast_1d(beta_list[layer])
 
-        # ── Cost unitary: U(H_C, γ) ──
-        for idx, (u, v, data) in enumerate(edges_list):
-            w = data["weight"]
+        # ── Cost unitary: U(H_C, γ) — elementwise phase over all N amplitudes at once ──
+        for idx, (w, zz) in enumerate(edge_zz):
             gamma_val = gamma_layer[idx] if len(gamma_layer) > 1 else gamma_layer[0]
             angle = gamma_val * w / 2.0
-            u_idx = nodes_list.index(u)
-            v_idx = nodes_list.index(v)
-            for k in range(N):
-                bit_u = (k >> (n - 1 - u_idx)) & 1
-                bit_v = (k >> (n - 1 - v_idx)) & 1
-                zz = 1 - 2 * (bit_u ^ bit_v)
-                psi[k] *= np.exp(1j * angle * zz)
+            psi = psi * np.exp(1j * angle * zz)
 
-        # ── Mixer unitary: U(H_B, β) ──
+        # ── Mixer unitary: U(H_B, β) — apply each qubit's 2x2 U_B via reshape + matmul ──
+        psi_tensor = psi.reshape([2] * n)
         for qubit in range(n):
             beta_val = beta_layer[qubit] if len(beta_layer) > 1 else beta_layer[0]
             U_B = expm(-1j * beta_val * U_B_list[qubit])
-            psi_new = np.zeros_like(psi)
-            for k in range(N):
-                bit = (k >> (n - 1 - qubit)) & 1
-                k_flip = k ^ (1 << (n - 1 - qubit))
-                
-                if bit == 0:
-                    psi_new[k] += U_B[0, 0] * psi[k] + U_B[0, 1] * psi[k_flip]
-                else:
-                    psi_new[k] += U_B[1, 1] * psi[k] + U_B[1, 0] * psi[k_flip]
-            psi = psi_new
+            psi_tensor = np.moveaxis(psi_tensor, qubit, 0)
+            shape = psi_tensor.shape
+            psi_tensor = (U_B @ psi_tensor.reshape(2, -1)).reshape(shape)
+            psi_tensor = np.moveaxis(psi_tensor, 0, qubit)
+        psi = psi_tensor.reshape(N)
 
     return psi
 
@@ -498,21 +501,28 @@ def qaoa_expectation(G, gamma_list, beta_list):
     Compute ⟨ψ(γ,β)|H_C|ψ(γ,β)⟩ = expected Max-Cut value.
 
     H_C = Σ_{(i,j)∈E} (w_ij/2) · (I - Z_i·Z_j)
+
+    Vectorized: the per-basis-state cut value depends only on G, not on
+    gamma/beta, so it's built once with array ops (not recomputed via a
+    Python loop calling maxcut_value on every one of the N states, on every
+    single optimizer evaluation).
     """
     n = G.number_of_nodes()
     N = 2 ** n
     psi = qaoa_statevector(G, gamma_list, beta_list)
-
-    # Compute expectation value from probabilities
     probs = np.abs(psi) ** 2
-    expectation = 0.0
 
-    for k in range(N):
-        x = np.array([int(b) for b in format(k, f"0{n}b")])
-        cut = maxcut_value(x, G)
-        expectation += probs[k] * cut
+    nodes_list = list(G.nodes())
+    idx_of = {node: k for k, node in enumerate(nodes_list)}
+    k_array = np.arange(N)
+    cut_values = np.zeros(N)
+    for u, v, data in G.edges(data=True):
+        u_idx, v_idx = idx_of[u], idx_of[v]
+        bit_u = (k_array >> (n - 1 - u_idx)) & 1
+        bit_v = (k_array >> (n - 1 - v_idx)) & 1
+        cut_values += data["weight"] * (bit_u ^ bit_v)
 
-    return expectation
+    return float(np.dot(probs, cut_values))
 
 
 def qaoa_best_bitstring(G, gamma_list, beta_list):
